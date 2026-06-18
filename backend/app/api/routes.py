@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -48,6 +48,10 @@ def health() -> dict[str, str]:
 @router.post("/api/media/upload", response_model=UploadResponse)
 async def upload_media(
     file: UploadFile = File(...),
+    frame_interval: float | None = Form(default=None),
+    segment_seconds: float | None = Form(default=None),
+    image_encoder: str | None = Form(default=None),
+    audio_encoder: str | None = Form(default=None),
     db: Session = Depends(get_db),
     settings: Settings = Depends(_settings_dep),
 ) -> UploadResponse:
@@ -81,10 +85,10 @@ async def upload_media(
         status="pending",
         progress=0.0,
         mode="full",
-        frame_interval=settings.default_frame_interval,
-        segment_seconds=settings.default_segment_seconds,
-        image_encoder=settings.default_image_encoder,
-        audio_encoder=settings.default_audio_encoder,
+        frame_interval=frame_interval or settings.default_frame_interval,
+        segment_seconds=segment_seconds or settings.default_segment_seconds,
+        image_encoder=image_encoder or settings.default_image_encoder,
+        audio_encoder=audio_encoder or settings.default_audio_encoder,
         created_at=datetime.now(UTC),
     )
     db.add(job)

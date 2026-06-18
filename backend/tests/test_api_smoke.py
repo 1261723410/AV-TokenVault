@@ -62,6 +62,26 @@ def test_upload_wav_creates_media_and_pending_job(client: TestClient):
     assert payload["job"]["progress"] == 0.0
 
 
+def test_upload_accepts_processing_parameters(client: TestClient):
+    response = client.post(
+        "/api/media/upload",
+        files={"file": ("demo.wav", b"RIFF....WAVE", "audio/wav")},
+        data={
+            "frame_interval": "3.5",
+            "segment_seconds": "8.0",
+            "image_encoder": "mock-image-encoder",
+            "audio_encoder": "mock-audio-encoder",
+        },
+    )
+
+    assert response.status_code == 200
+    job = response.json()["job"]
+    assert job["frame_interval"] == 3.5
+    assert job["segment_seconds"] == 8.0
+    assert job["image_encoder"] == "mock-image-encoder"
+    assert job["audio_encoder"] == "mock-audio-encoder"
+
+
 def test_stats_for_unprocessed_upload_are_zero(client: TestClient):
     upload = client.post(
         "/api/media/upload",
