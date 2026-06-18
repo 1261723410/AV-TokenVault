@@ -38,6 +38,19 @@ def test_health_endpoint(client: TestClient):
     assert response.json() == {"status": "ok"}
 
 
+def test_cors_allows_lan_frontend_origin(client: TestClient):
+    response = client.options(
+        "/api/jobs",
+        headers={
+            "Origin": "http://192.168.100.67:3000",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://192.168.100.67:3000"
+
+
 def test_upload_rejects_unsupported_extension(client: TestClient):
     response = client.post(
         "/api/media/upload",
