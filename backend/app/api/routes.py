@@ -27,7 +27,7 @@ VIDEO_EXTENSIONS = {".mp4", ".mov"}
 AUDIO_EXTENSIONS = {".wav", ".mp3"}
 
 
-def _settings_dep() -> Settings:
+def get_request_settings() -> Settings:
     return get_settings()
 
 
@@ -53,7 +53,7 @@ async def upload_media(
     image_encoder: str | None = Form(default=None),
     audio_encoder: str | None = Form(default=None),
     db: Session = Depends(get_db),
-    settings: Settings = Depends(_settings_dep),
+    settings: Settings = Depends(get_request_settings),
 ) -> UploadResponse:
     try:
         media_type = detect_media_type(file.filename or "")
@@ -174,7 +174,7 @@ def get_media_stats(media_id: int, db: Session = Depends(get_db)) -> MediaStatsR
 @router.get("/api/files/{artifact_path:path}")
 def get_file(
     artifact_path: str,
-    settings: Settings = Depends(_settings_dep),
+    settings: Settings = Depends(get_request_settings),
 ) -> FileResponse:
     try:
         path = safe_artifact_path(artifact_path, settings=settings)

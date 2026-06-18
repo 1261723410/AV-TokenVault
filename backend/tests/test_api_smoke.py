@@ -62,6 +62,17 @@ def test_upload_wav_creates_media_and_pending_job(client: TestClient):
     assert payload["job"]["progress"] == 0.0
 
 
+def test_upload_uses_app_settings_data_directory(client: TestClient, tmp_path: Path):
+    response = client.post(
+        "/api/media/upload",
+        files={"file": ("demo.wav", b"RIFF....WAVE", "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    uploaded_files = list((tmp_path / "data" / "uploads").glob("*_demo.wav"))
+    assert len(uploaded_files) == 1
+
+
 def test_upload_accepts_processing_parameters(client: TestClient):
     response = client.post(
         "/api/media/upload",
