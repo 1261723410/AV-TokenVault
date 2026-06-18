@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     project_root: Path = Field(default_factory=_default_project_root)
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
-    cors_origin_regex: str = r"^http://(localhost|127\.0\.0\.1|0\.0\.0\.0|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|192\.168\.\d+\.\d+):3000$"
+    cors_origin_regex: str = r"^https?://[^/]+:3000$"
 
     default_frame_interval: float = 2.0
     default_segment_seconds: float = 5.0

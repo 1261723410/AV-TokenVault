@@ -15,6 +15,7 @@ import {
   type ProcessingJob,
   type UploadParams,
   type VideoFrame,
+  API_BASE_URL,
   getAudioSegments,
   getFrames,
   getJob,
@@ -134,6 +135,7 @@ export default function Home() {
         {error ? (
           <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
+            <div className="mt-1 text-xs text-destructive/80">API：{API_BASE_URL}</div>
           </div>
         ) : null}
 
