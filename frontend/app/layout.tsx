@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AV-TokenVault",
-  description: "本地音视频 Token 化与向量入库原型系统"
+  title: "音视频令牌化向量存储系统软件 V1.0",
+  description: "本地音视频令牌化与向量入库系统"
 };
 
 export default function RootLayout({

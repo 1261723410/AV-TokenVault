@@ -60,12 +60,14 @@ export function UploadPanel({ disabled, onUpload }: UploadPanelProps) {
             <Label htmlFor="imageEncoder">图像 encoder</Label>
             <Select id="imageEncoder" name="imageEncoder" defaultValue="mock-image-encoder">
               <option value="mock-image-encoder">mock-image-encoder</option>
+              <option value="open-clip:ViT-B-32:laion2b_s34b_b79k">OpenCLIP ViT-B-32</option>
             </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="audioEncoder">音频 encoder</Label>
             <Select id="audioEncoder" name="audioEncoder" defaultValue="mock-audio-encoder">
               <option value="mock-audio-encoder">mock-audio-encoder</option>
+              <option value="msclap:2023">MS-CLAP 2023</option>
             </Select>
           </div>
           <Button className="w-full" type="submit" disabled={disabled}>

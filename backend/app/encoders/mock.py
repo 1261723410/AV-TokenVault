@@ -1,7 +1,7 @@
 import hashlib
 from pathlib import Path
 
-from app.encoders.base import EmbeddingResult
+from app.encoders.base import EmbeddingResult, TranscriptChunkResult
 
 
 def _deterministic_vector(seed: str, dimension: int) -> list[float]:
@@ -46,4 +46,35 @@ class MockAudioEncoder:
             encoder_name=self.encoder_name,
             modality=self.modality,
             vector=_deterministic_vector(seed, self._dimension),
+        )
+
+
+class MockTextEmbedder:
+    encoder_name = "mock-text-embedder"
+    modality = "text"
+
+    def __init__(self, dimension: int = 32) -> None:
+        self._dimension = dimension
+
+    def encode_text(self, text: str) -> EmbeddingResult:
+        seed = f"{self.encoder_name}:{text}"
+        return EmbeddingResult(
+            encoder_name=self.encoder_name,
+            modality=self.modality,
+            vector=_deterministic_vector(seed, self._dimension),
+        )
+
+
+class MockTranscriber:
+    transcriber_name = "mock-transcriber"
+
+    def transcribe_segment(self, path: Path, *, start_seconds: float, end_seconds: float) -> TranscriptChunkResult:
+        segment_name = Path(path).stem
+        text = f"mock transcript {segment_name} {start_seconds:.1f}-{end_seconds:.1f}s"
+        return TranscriptChunkResult(
+            text=text,
+            start_seconds=start_seconds,
+            end_seconds=end_seconds,
+            language="und",
+            source=self.transcriber_name,
         )

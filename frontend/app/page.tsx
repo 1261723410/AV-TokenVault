@@ -5,14 +5,18 @@ import { AudioSegmentTable } from "@/components/audio-segment-table";
 import { FrameGrid } from "@/components/frame-grid";
 import { JobStatus } from "@/components/job-status";
 import { LogPanel } from "@/components/log-panel";
+import { SearchPanel } from "@/components/search-panel";
 import { StatsPanel } from "@/components/stats-panel";
 import { TaskList } from "@/components/task-list";
+import { TranscriptPanel } from "@/components/transcript-panel";
 import { UploadPanel } from "@/components/upload-panel";
 import {
   type AudioSegment,
   type JobLog,
   type MediaStats,
   type ProcessingJob,
+  type SearchResult,
+  type TranscriptChunk,
   type UploadParams,
   type VideoFrame,
   API_BASE_URL,
@@ -21,7 +25,9 @@ import {
   getJob,
   getJobLogs,
   getStats,
+  getTranscripts,
   listJobs,
+  searchMedia,
   startJob,
   uploadMedia
 } from "@/lib/api";
@@ -32,6 +38,8 @@ export default function Home() {
   const [stats, setStats] = useState<MediaStats | null>(null);
   const [frames, setFrames] = useState<VideoFrame[]>([]);
   const [segments, setSegments] = useState<AudioSegment[]>([]);
+  const [transcripts, setTranscripts] = useState<TranscriptChunk[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [logs, setLogs] = useState<JobLog[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,18 +62,21 @@ export default function Home() {
       setStats(null);
       setFrames([]);
       setSegments([]);
+      setTranscripts([]);
       setLogs([]);
       return;
     }
-    const [nextStats, nextFrames, nextSegments, nextLogs] = await Promise.all([
+    const [nextStats, nextFrames, nextSegments, nextTranscripts, nextLogs] = await Promise.all([
       getStats(job.media_id),
       getFrames(job.media_id),
       getAudioSegments(job.media_id),
+      getTranscripts(job.media_id),
       getJobLogs(job.id)
     ]);
     setStats(nextStats);
     setFrames(nextFrames);
     setSegments(nextSegments);
+    setTranscripts(nextTranscripts);
     setLogs(nextLogs);
   }, []);
 
@@ -124,12 +135,25 @@ export default function Home() {
     }
   }
 
+  async function handleSearch(query: string, modality: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await searchMedia(query, modality, 5);
+      setSearchResults(response.results);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-muted/30">
       <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6">
         <header className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-normal">AV-TokenVault</h1>
-          <p className="text-sm text-muted-foreground">本地音视频 Token 化与向量入库原型系统</p>
+          <h1 className="text-2xl font-semibold tracking-normal">音视频令牌化向量存储系统软件 V1.0</h1>
+          <p className="text-sm text-muted-foreground">本地音视频令牌化、向量入库与检索工作台</p>
         </header>
 
         {error ? (
@@ -146,12 +170,14 @@ export default function Home() {
           </aside>
 
           <section className="space-y-5">
+            <SearchPanel busy={busy} results={searchResults} onSearch={handleSearch} />
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
               <JobStatus job={selectedJob} onStart={handleStart} busy={busy} />
               <StatsPanel stats={stats} />
             </div>
             <FrameGrid frames={frames} />
             <AudioSegmentTable segments={segments} />
+            <TranscriptPanel chunks={transcripts} />
             <LogPanel logs={logs} />
           </section>
         </div>

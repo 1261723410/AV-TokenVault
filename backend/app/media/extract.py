@@ -11,14 +11,20 @@ def build_extract_frames_command(
     output_pattern: Path,
     frame_interval: float,
     max_frames: int,
+    duration_seconds: float | None = None,
 ) -> list[str]:
+    sampling_interval = resolve_frame_sampling_interval(
+        frame_interval=frame_interval,
+        max_frames=max_frames,
+        duration_seconds=duration_seconds,
+    )
     return [
         "ffmpeg",
         "-y",
         "-i",
         str(input_path),
         "-vf",
-        f"fps=1/{frame_interval}",
+        f"fps=1/{sampling_interval}",
         "-frames:v",
         str(max_frames),
         str(output_pattern),
@@ -72,7 +78,24 @@ def run_ffmpeg(command: list[str]) -> None:
         raise MediaProcessingError(completed.stderr.strip() or "ffmpeg command failed")
 
 
-def extract_frames(input_path: Path, output_dir: Path, frame_interval: float, max_frames: int) -> list[Path]:
+def resolve_frame_sampling_interval(
+    *,
+    frame_interval: float,
+    max_frames: int,
+    duration_seconds: float | None,
+) -> float:
+    if duration_seconds is None or duration_seconds <= 0 or max_frames <= 0:
+        return frame_interval
+    return max(frame_interval, duration_seconds / max_frames)
+
+
+def extract_frames(
+    input_path: Path,
+    output_dir: Path,
+    frame_interval: float,
+    max_frames: int,
+    duration_seconds: float | None = None,
+) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_pattern = output_dir / "frame_%06d.jpg"
     run_ffmpeg(
@@ -81,6 +104,7 @@ def extract_frames(input_path: Path, output_dir: Path, frame_interval: float, ma
             output_pattern=output_pattern,
             frame_interval=frame_interval,
             max_frames=max_frames,
+            duration_seconds=duration_seconds,
         )
     )
     return sorted(output_dir.glob("frame_*.jpg"))

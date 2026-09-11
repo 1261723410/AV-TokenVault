@@ -6,10 +6,10 @@ from threading import Lock
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings, get_settings
-from app.db.models import AudioSegment, JobLog, ProcessingJob, VideoFrame
+from app.db.models import AudioSegment, JobLog, ProcessingJob, TranscriptChunk, VideoFrame
 from app.db.session import SessionLocal
-from app.encoders.mock import MockAudioEncoder, MockImageEncoder
-from app.media.extract import extract_audio, extract_frames, segment_audio
+from app.encoders.registry import get_audio_encoder, get_image_encoder, get_text_embedder, get_transcriber
+from app.media.extract import extract_audio, extract_frames, resolve_frame_sampling_interval, segment_audio
 from app.media.probe import MediaProbe, probe_media
 from app.storage.vector_store import SQLiteVectorStore
 
@@ -39,11 +39,21 @@ def _timestamp_for_frame(index: int, frame_interval: float) -> float:
     return index * frame_interval
 
 
+def _segment_bounds(index: int, segment_seconds: float, source_duration_seconds: float | None) -> tuple[float, float]:
+    start = index * segment_seconds
+    planned_end = start + segment_seconds
+    if source_duration_seconds is None:
+        return start, planned_end
+    end = min(planned_end, source_duration_seconds)
+    return start, max(start, end)
+
+
 def _create_frame_records(
     db: Session,
     *,
     job: ProcessingJob,
     frame_paths: list[Path],
+    frame_interval: float,
     media_width: int | None,
     media_height: int | None,
     settings: Settings,
@@ -54,7 +64,7 @@ def _create_frame_records(
             media_id=job.media_id,
             job_id=job.id,
             frame_index=index,
-            timestamp_seconds=_timestamp_for_frame(index, job.frame_interval),
+            timestamp_seconds=_timestamp_for_frame(index, frame_interval),
             image_path=_relative_to_data(frame_path, settings),
             width=media_width,
             height=media_height,
@@ -70,12 +80,12 @@ def _create_audio_segment_records(
     *,
     job: ProcessingJob,
     segment_paths: list[Path],
+    source_duration_seconds: float | None,
     settings: Settings,
 ) -> list[AudioSegment]:
     records: list[AudioSegment] = []
     for index, segment_path in enumerate(segment_paths):
-        start = index * job.segment_seconds
-        end = start + job.segment_seconds
+        start, end = _segment_bounds(index, job.segment_seconds, source_duration_seconds)
         record = AudioSegment(
             media_id=job.media_id,
             job_id=job.id,
@@ -83,7 +93,7 @@ def _create_audio_segment_records(
             start_seconds=start,
             end_seconds=end,
             audio_path=_relative_to_data(segment_path, settings),
-            duration_seconds=job.segment_seconds,
+            duration_seconds=end - start,
         )
         db.add(record)
         records.append(record)
@@ -98,7 +108,7 @@ def _encode_frames(
     frames: list[VideoFrame],
     settings: Settings,
 ) -> None:
-    encoder = MockImageEncoder()
+    encoder = get_image_encoder(job.image_encoder)
     vector_store = SQLiteVectorStore(db)
     for frame in frames:
         result = encoder.encode(settings.data_root / frame.image_path)
@@ -118,7 +128,7 @@ def _encode_audio_segments(
     segments: list[AudioSegment],
     settings: Settings,
 ) -> None:
-    encoder = MockAudioEncoder()
+    encoder = get_audio_encoder(job.audio_encoder)
     vector_store = SQLiteVectorStore(db)
     for segment in segments:
         result = encoder.encode(settings.data_root / segment.audio_path)
@@ -127,6 +137,59 @@ def _encode_audio_segments(
             job_id=job.id,
             source_type="audio_segment",
             source_id=segment.id,
+            result=result,
+        )
+
+
+def _create_transcript_chunks(
+    db: Session,
+    *,
+    job: ProcessingJob,
+    segments: list[AudioSegment],
+    settings: Settings,
+) -> list[TranscriptChunk]:
+    transcriber = get_transcriber(settings.default_transcriber)
+    records: list[TranscriptChunk] = []
+    for index, segment in enumerate(segments):
+        result = transcriber.transcribe_segment(
+            settings.data_root / segment.audio_path,
+            start_seconds=segment.start_seconds,
+            end_seconds=segment.end_seconds,
+        )
+        record = TranscriptChunk(
+            media_id=job.media_id,
+            job_id=job.id,
+            audio_segment_id=segment.id,
+            chunk_index=index,
+            start_seconds=result.start_seconds,
+            end_seconds=result.end_seconds,
+            text=result.text,
+            language=result.language,
+            source=result.source,
+            created_at=_now(),
+        )
+        db.add(record)
+        records.append(record)
+    db.flush()
+    return records
+
+
+def _encode_transcript_chunks(
+    db: Session,
+    *,
+    job: ProcessingJob,
+    chunks: list[TranscriptChunk],
+    settings: Settings,
+) -> None:
+    encoder = get_text_embedder(settings.default_text_encoder)
+    vector_store = SQLiteVectorStore(db)
+    for chunk in chunks:
+        result = encoder.encode_text(chunk.text)
+        vector_store.add_embedding(
+            media_id=job.media_id,
+            job_id=job.id,
+            source_type="transcript_chunk",
+            source_id=chunk.id,
             result=result,
         )
 
@@ -168,16 +231,23 @@ def process_job(
                 segment_records: list[AudioSegment] = []
 
                 if media.media_type == "video":
+                    frame_sampling_interval = resolve_frame_sampling_interval(
+                        frame_interval=job.frame_interval,
+                        max_frames=active_settings.max_frames,
+                        duration_seconds=media_info.duration_seconds,
+                    )
                     frame_paths = extract_frames(
                         input_path,
                         job_output_root / "frames",
                         job.frame_interval,
                         active_settings.max_frames,
+                        duration_seconds=media_info.duration_seconds,
                     )
                     frame_records = _create_frame_records(
                         db,
                         job=job,
                         frame_paths=frame_paths,
+                        frame_interval=frame_sampling_interval,
                         media_width=media_info.width,
                         media_height=media_info.height,
                         settings=active_settings,
@@ -186,11 +256,13 @@ def process_job(
                     _log(db, job.id, f"抽取视频帧 {len(frame_records)} 个")
 
                     audio_path = extract_audio(input_path, job_output_root / "audio" / "track.wav")
+                    audio_info = probe_media(audio_path)
                     segment_paths = segment_audio(audio_path, job_output_root / "segments", job.segment_seconds)
                     segment_records = _create_audio_segment_records(
                         db,
                         job=job,
                         segment_paths=segment_paths,
+                        source_duration_seconds=audio_info.duration_seconds,
                         settings=active_settings,
                     )
                     _set_progress(db, job, 0.65)
@@ -198,11 +270,13 @@ def process_job(
 
                 elif media.media_type == "audio":
                     wav_path = extract_audio(input_path, job_output_root / "audio" / "source.wav")
+                    audio_info = probe_media(wav_path)
                     segment_paths = segment_audio(wav_path, job_output_root / "segments", job.segment_seconds)
                     segment_records = _create_audio_segment_records(
                         db,
                         job=job,
                         segment_paths=segment_paths,
+                        source_duration_seconds=audio_info.duration_seconds,
                         settings=active_settings,
                     )
                     _set_progress(db, job, 0.65)
@@ -210,6 +284,13 @@ def process_job(
 
                 _encode_frames(db, job=job, frames=frame_records, settings=active_settings)
                 _encode_audio_segments(db, job=job, segments=segment_records, settings=active_settings)
+                transcript_chunks = _create_transcript_chunks(
+                    db,
+                    job=job,
+                    segments=segment_records,
+                    settings=active_settings,
+                )
+                _encode_transcript_chunks(db, job=job, chunks=transcript_chunks, settings=active_settings)
                 _set_progress(db, job, 0.9)
                 _log(db, job.id, "embedding 写入完成")
 

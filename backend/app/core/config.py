@@ -18,9 +18,11 @@ class Settings(BaseSettings):
 
     default_frame_interval: float = 2.0
     default_segment_seconds: float = 5.0
-    max_frames: int = 120
+    max_frames: int = 600
     default_image_encoder: str = "mock-image-encoder"
     default_audio_encoder: str = "mock-audio-encoder"
+    default_transcriber: str = "mock-transcriber"
+    default_text_encoder: str = "mock-text-embedder"
 
     @property
     def data_root(self) -> Path:

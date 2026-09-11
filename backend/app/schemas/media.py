@@ -70,6 +70,22 @@ class AudioSegmentRead(BaseModel):
     duration_seconds: float
 
 
+class TranscriptChunkRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    media_id: int
+    job_id: int
+    audio_segment_id: int
+    chunk_index: int
+    start_seconds: float
+    end_seconds: float
+    text: str
+    language: str | None
+    source: str
+    created_at: datetime
+
+
 class UploadResponse(BaseModel):
     media: MediaAssetRead
     job: ProcessingJobRead
@@ -79,4 +95,30 @@ class MediaStatsRead(BaseModel):
     media_id: int
     frame_count: int
     audio_segment_count: int
+    transcript_chunk_count: int
     embedding_count: int
+
+
+class SearchRequest(BaseModel):
+    query: str
+    modality: str = "text"
+    limit: int = 5
+
+
+class SearchResultRead(BaseModel):
+    embedding_id: int
+    media_id: int
+    job_id: int
+    modality: str
+    source_type: str
+    source_id: int
+    encoder_name: str
+    score: float
+    text: str | None = None
+    start_seconds: float | None = None
+    end_seconds: float | None = None
+
+
+class SearchResponse(BaseModel):
+    query: str
+    results: list[SearchResultRead]

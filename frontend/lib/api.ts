@@ -4,6 +4,7 @@ function defaultApiBaseUrl(): string {
   }
   if (
     window.location.hostname === "localhost" ||
+    window.location.hostname.endsWith(".localhost") ||
     window.location.hostname === "127.0.0.1" ||
     window.location.hostname === "0.0.0.0"
   ) {
@@ -76,11 +77,45 @@ export type AudioSegment = {
   duration_seconds: number;
 };
 
+export type TranscriptChunk = {
+  id: number;
+  media_id: number;
+  job_id: number;
+  audio_segment_id: number;
+  chunk_index: number;
+  start_seconds: number;
+  end_seconds: number;
+  text: string;
+  language: string | null;
+  source: string;
+  created_at: string;
+};
+
 export type MediaStats = {
   media_id: number;
   frame_count: number;
   audio_segment_count: number;
+  transcript_chunk_count: number;
   embedding_count: number;
+};
+
+export type SearchResult = {
+  embedding_id: number;
+  media_id: number;
+  job_id: number;
+  modality: string;
+  source_type: string;
+  source_id: number;
+  encoder_name: string;
+  score: number;
+  text: string | null;
+  start_seconds: number | null;
+  end_seconds: number | null;
+};
+
+export type SearchResponse = {
+  query: string;
+  results: SearchResult[];
 };
 
 export type UploadParams = {
@@ -104,7 +139,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const payload = await response.json();
       message = payload.detail ?? message;
     } catch {
-      // Keep the HTTP status fallback.
     }
     throw new Error(message);
   }
@@ -148,8 +182,22 @@ export function getAudioSegments(mediaId: number): Promise<AudioSegment[]> {
   return request<AudioSegment[]>(`/api/media/${mediaId}/audio-segments`);
 }
 
+export function getTranscripts(mediaId: number): Promise<TranscriptChunk[]> {
+  return request<TranscriptChunk[]>(`/api/media/${mediaId}/transcripts`);
+}
+
 export function getStats(mediaId: number): Promise<MediaStats> {
   return request<MediaStats>(`/api/media/${mediaId}/stats`);
+}
+
+export function searchMedia(query: string, modality = "text", limit = 5): Promise<SearchResponse> {
+  return request<SearchResponse>("/api/search", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ query, modality, limit })
+  });
 }
 
 export function artifactUrl(path: string): string {

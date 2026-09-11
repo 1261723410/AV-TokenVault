@@ -28,6 +28,7 @@ class MediaAsset(Base):
     frames: Mapped[list["VideoFrame"]] = relationship(back_populates="media")
     audio_segments: Mapped[list["AudioSegment"]] = relationship(back_populates="media")
     embeddings: Mapped[list["Embedding"]] = relationship(back_populates="media")
+    transcript_chunks: Mapped[list["TranscriptChunk"]] = relationship(back_populates="media")
 
 
 class ProcessingJob(Base):
@@ -52,6 +53,7 @@ class ProcessingJob(Base):
     frames: Mapped[list["VideoFrame"]] = relationship(back_populates="job")
     audio_segments: Mapped[list["AudioSegment"]] = relationship(back_populates="job")
     embeddings: Mapped[list["Embedding"]] = relationship(back_populates="job")
+    transcript_chunks: Mapped[list["TranscriptChunk"]] = relationship(back_populates="job")
 
 
 class JobLog(Base):
@@ -96,6 +98,27 @@ class AudioSegment(Base):
 
     media: Mapped[MediaAsset] = relationship(back_populates="audio_segments")
     job: Mapped[ProcessingJob] = relationship(back_populates="audio_segments")
+    transcript_chunks: Mapped[list["TranscriptChunk"]] = relationship(back_populates="audio_segment")
+
+
+class TranscriptChunk(Base):
+    __tablename__ = "transcript_chunks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    media_id: Mapped[int] = mapped_column(ForeignKey("media_assets.id"), nullable=False)
+    job_id: Mapped[int] = mapped_column(ForeignKey("processing_jobs.id"), nullable=False)
+    audio_segment_id: Mapped[int] = mapped_column(ForeignKey("audio_segments.id"), nullable=False)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    end_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    language: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=utc_now, nullable=False)
+
+    media: Mapped[MediaAsset] = relationship(back_populates="transcript_chunks")
+    job: Mapped[ProcessingJob] = relationship(back_populates="transcript_chunks")
+    audio_segment: Mapped[AudioSegment] = relationship(back_populates="transcript_chunks")
 
 
 class Embedding(Base):

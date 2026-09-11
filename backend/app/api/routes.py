@@ -9,17 +9,23 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.paths import safe_artifact_path
-from app.db.models import AudioSegment, Embedding, JobLog, MediaAsset, ProcessingJob, VideoFrame
+from app.db.models import AudioSegment, Embedding, JobLog, MediaAsset, ProcessingJob, TranscriptChunk, VideoFrame
 from app.db.session import get_db
+from app.encoders.registry import get_text_embedder
 from app.schemas.media import (
     AudioSegmentRead,
     JobLogRead,
     MediaAssetRead,
     MediaStatsRead,
     ProcessingJobRead,
+    SearchRequest,
+    SearchResponse,
+    SearchResultRead,
+    TranscriptChunkRead,
     UploadResponse,
     VideoFrameRead,
 )
+from app.storage.vector_store import SQLiteVectorStore
 
 router = APIRouter()
 
@@ -155,11 +161,23 @@ def get_media_audio_segments(media_id: int, db: Session = Depends(get_db)) -> li
     )
 
 
+@router.get("/api/media/{media_id}/transcripts", response_model=list[TranscriptChunkRead])
+def get_media_transcripts(media_id: int, db: Session = Depends(get_db)) -> list[TranscriptChunk]:
+    return list(
+        db.scalars(
+            select(TranscriptChunk).where(TranscriptChunk.media_id == media_id).order_by(TranscriptChunk.chunk_index)
+        ).all()
+    )
+
+
 @router.get("/api/media/{media_id}/stats", response_model=MediaStatsRead)
 def get_media_stats(media_id: int, db: Session = Depends(get_db)) -> MediaStatsRead:
     frame_count = db.scalar(select(func.count()).select_from(VideoFrame).where(VideoFrame.media_id == media_id)) or 0
     audio_segment_count = db.scalar(
         select(func.count()).select_from(AudioSegment).where(AudioSegment.media_id == media_id)
+    ) or 0
+    transcript_chunk_count = db.scalar(
+        select(func.count()).select_from(TranscriptChunk).where(TranscriptChunk.media_id == media_id)
     ) or 0
     embedding_count = db.scalar(select(func.count()).select_from(Embedding).where(Embedding.media_id == media_id)) or 0
 
@@ -167,8 +185,61 @@ def get_media_stats(media_id: int, db: Session = Depends(get_db)) -> MediaStatsR
         media_id=media_id,
         frame_count=frame_count,
         audio_segment_count=audio_segment_count,
+        transcript_chunk_count=transcript_chunk_count,
         embedding_count=embedding_count,
     )
+
+
+@router.post("/api/search", response_model=SearchResponse)
+def search_media(
+    request: SearchRequest,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_request_settings),
+) -> SearchResponse:
+    query = request.query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Search query cannot be empty")
+    if request.modality != "text":
+        raise HTTPException(status_code=400, detail="Only transcript text search is currently supported")
+
+    limit = max(1, min(request.limit, 50))
+    query_embedding = get_text_embedder(settings.default_text_encoder).encode_text(query)
+    hits = SQLiteVectorStore(db).search_embeddings(
+        query_embedding.vector,
+        modality="text",
+        encoder_name=query_embedding.encoder_name,
+        limit=limit,
+    )
+
+    results: list[SearchResultRead] = []
+    for hit in hits:
+        text: str | None = None
+        start_seconds: float | None = None
+        end_seconds: float | None = None
+        if hit.source_type == "transcript_chunk":
+            chunk = db.get(TranscriptChunk, hit.source_id)
+            if chunk is not None:
+                text = chunk.text
+                start_seconds = chunk.start_seconds
+                end_seconds = chunk.end_seconds
+
+        results.append(
+            SearchResultRead(
+                embedding_id=hit.embedding_id,
+                media_id=hit.media_id,
+                job_id=hit.job_id,
+                modality=hit.modality,
+                source_type=hit.source_type,
+                source_id=hit.source_id,
+                encoder_name=hit.encoder_name,
+                score=hit.score,
+                text=text,
+                start_seconds=start_seconds,
+                end_seconds=end_seconds,
+            )
+        )
+
+    return SearchResponse(query=query, results=results)
 
 
 @router.get("/api/files/{artifact_path:path}")

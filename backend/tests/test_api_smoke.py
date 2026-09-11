@@ -119,5 +119,6 @@ def test_stats_for_unprocessed_upload_are_zero(client: TestClient):
         "media_id": upload["media"]["id"],
         "frame_count": 0,
         "audio_segment_count": 0,
+        "transcript_chunk_count": 0,
         "embedding_count": 0,
     }
